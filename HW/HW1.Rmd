@@ -1,0 +1,188 @@
+---
+title: "Homework 1"
+author: "Neal Marquez"
+date: "October 5, 2018"
+output: pdf_document
+---
+
+```{r setup, message=F, warning=FALSE}
+rm(list=ls())
+library(tidyverse)
+library(haven)
+library(corrr)
+library(lmtest)
+
+extractCoeffs <- function(fittedmodel, logodds=FALSE){
+    coeff <-  data.frame(
+        Coefficient=names(coef(fittedmodel)),
+        Estimate=coef(fittedmodel)) %>%
+        mutate(lower=c(t(confint(fittedmodel)[,1]))) %>%
+        mutate(upper=c(t(confint(fittedmodel)[,2])))
+    if(!logodds){
+        coeff <- coeff %>%
+            mutate_if(is.numeric, exp)
+    }
+    return(coeff)
+}
+   
+```
+
+1. Determine which variables should be excluded from the analysis up front. Examples include "hours", "wage", "lwage." These are variables that should not be seen as explanatory for the binary response "inlf".
+
+I decided to exclude all variables that were a direct cause of participating in the labor force, wage, and log wages, as well as information about the wifes income.
+
+2. Determine if you need to take any transformation of the remaining explanatory variables. For example, "age" should be used as "log(age)", etc.
+
+The variables `hushrs` and `age` were logged and then all predictor variables were z scored for the purpose of the analysis.
+
+```{r Q1-2}
+laborDF <- read_dta("./MROZ.dta") %>%
+# 1) Remove Columns that dont meet our criteria
+    select(-hours, -wage, -nwifeinc, -lwage) %>%
+# 2) Transform variables that are on limited scale and normalize
+    mutate_at(vars(age, hushrs), log) %>%
+    mutate_at(vars(-inlf), function(x) (x - mean(x))/sd(x))
+```
+
+3. Determine an initial logistic regression using a heuristic argument of your choice. You could include the explanatory variables with the highest absolute correlation with the response. You can come up with another idea if you like.
+
+All variables were tested for correlation with the outcome variable of wife labor force participation and any variable that had an absolute correlation of over .15 was considered for the analysis. This included terms that were transformations of an original variable such as squared terms.
+
+```{r Q3}
+# check out the top variables it looks like both expr and expr^2 have hi corr
+# so we can inlcude them both
+laborDF %>%
+    correlate(quiet=TRUE) %>%
+    focus(inlf) %>%
+    mutate(abs.corr=abs(inlf)) %>%
+    arrange(-abs.corr) %>%
+    filter(abs.corr > .15)
+
+# Take everything with more than 15% corr
+fbase <- inlf ~ repwage + exper + expersq + kidslt6 + educ
+```
+
+4. Fit the model and make sure there are no numerical errors when the MLEs are calculated. Give a formula for the fitted model and discuss its validity in term of standardized residuals, fitted values, etc. Produce relevant plots.
+
+$$
+Y_i \sim \text{Bernoulli}(p_i) \\
+\text{logit}(p_i) = \beta_0 + \beta_1*\text{repwage}_i + beta_2*\text{exper}_i + \beta_3*\text{exper}^2_i + \beta_4*\text{kidslt6}_i + beta_5*\text{educ}_i
+$$
+
+On the first fit of the model with all of the covariates that had met the required conditions our fit provides some sensible results. Examining the density plots of the fitted probabilities we can see that a majority of the values are marked correctly with their true value if we use a 50% cut off for labor force participation. The model does seem to miss some true positives and outliers can be observed in the second plot however they are a small minority of the total observations.
+
+```{r Q4}
+# fit model
+baseModel <- glm(fbase, family=binomial(link=logit), data=laborDF)
+
+baseModelDF <- laborDF %>%
+    mutate(fittedBase=baseModel$fitted.values, inlf=as.logical(inlf)) %>%
+    mutate(residNorm=(inlf-fittedBase)/sqrt(fittedBase*(1-fittedBase))) %>%
+    arrange(residNorm) %>%
+    mutate(Outlier=abs(residNorm) > 2, id=1:n())
+
+baseModelDF %>%
+    ggplot(aes(fittedBase, group=inlf, fill=inlf)) +
+    geom_density(alpha=.3) +
+    theme_classic() +
+    labs(x="Fitted Probabilities", y="Density of Fits",
+         fill="Labor Force\nParticipant")
+
+baseModelDF %>%
+    ggplot(aes(x=id, y=residNorm, color=Outlier)) +
+    theme_classic() +
+    geom_point() +
+    scale_colour_manual(values=c("TRUE"="red", "FALSE"="black")) +
+    labs(x="", y="Standardized Residuals")
+```
+
+5. Use the function step to improve the model in terms of AIC. Let M be the final model returned by step.
+
+The step function tests the intercept only model and works its way up, or down from, the model with all five terms and chooses a model that best fits the observed data given the likelihood specified based on the AIC criteria. The model that was chosen was the full model shown above.
+
+```{r Q5}
+nullModel <- glm(inlf~1, family=binomial(link=logit), data=laborDF)
+capture.output(M <- step(
+    nullModel, trace=TRUE, direction="both",
+    scope=list(upper=baseModel, lower=nullModel)), file='NUL')
+summary(M)
+```
+
+6. Consider all the models that are obtained by deleting one variable from M. Perform likelihood ratio tests to see whether any variables should be removed from M.
+
+7. Compute the BIC scores of the same models. Which model would you pick with respect to BIC?
+
+8. Now calculate the Brier scores of the same models. Which model would you pick now? What is the error rate of your preferred model?
+
+Based on the three tests specified above I believe that it would be best to remove the squared `exper` term from the model. The BIC more heavily penalizes models that have extra terms and the removal of this term improves the BIC. In addition, the inclusion of this variable is not supported by the likelihood ratio test. The Brier score also does not change much from the full model when we remove the term.
+
+```{r Q6-8}
+singVars <- attr(M$terms, "term.labels")
+names(singVars) <- singVars
+
+modelDropList <- lapply(singVars, function(v){
+    newf <- drop.terms(
+        M$terms,
+        grep(v, attr(M$terms, "term.labels")),
+        keep.response=TRUE)
+    update(M, newf)
+})
+
+pValueCompare <- sapply(modelDropList, function(m){
+    round(lrtest(m,M)$`Pr(>Chisq)`[2], 4)
+})
+
+bicCompare <- sapply(modelDropList, function(m){
+    BIC(m) > BIC(M)
+})
+
+brierCompare <- sapply(modelDropList, function(m){
+        mean((laborDF$inlf-m$fitted.values)^2)})
+
+tibble(
+    `Variable Removed`=singVars,
+    `LR Test P Value`=pValueCompare,
+    `BIC Greater than M`=bicCompare,
+    `Brier Score`=brierCompare)
+
+```
+
+9. Draw conclusions about what you learned from your analysis. Give a formula for
+your final model and interpret the regression coefficients (an interpretation in term of
+log-odds is fine). Discuss the statistical significance of each variable selected in the
+model.
+
+#### Final Model
+$$
+Y_i \sim \text{Bernoulli}(p_i) \\
+\text{logit}(p_i) = \beta_0 + \beta_1*\text{repwage}_i + \beta_2*\text{exper}^2_i + \beta_3*\text{kidslt6}_i + beta_4*\text{educ}_i
+$$
+
+The final model that removes extraneous terms was found by a combination of model testing procedures that included stepwise comparison to find a starting model to work with, after a heuristic threshold was set, and then more rigorously tested the removal of covariates to see how model fit changed. We selected our final model based on model likelihood ratio tests and BIC and the final models functional form is shown above. A plot of the odds ratios can be seen below which shows how a one unit change, of the normalized covariate, effects the log odds of labor force participation.  
+
+```{r Q9, message=F}
+finalM <- modelDropList[[which(!bicCompare)]]
+
+finalModelDF <- laborDF %>%
+    mutate(fittedFinal=finalM$fitted.values, inlf=as.logical(inlf)) %>%
+    mutate(residNorm=(inlf-fittedFinal)/sqrt(fittedFinal*(1-fittedFinal))) %>%
+    arrange(residNorm) %>%
+    mutate(Outlier=abs(residNorm) > 2, id=1:n())
+
+nF <- capture.output(mDF <- extractCoeffs(finalM, T))
+
+mDF %>%
+    filter(Coefficient != "(Intercept)") %>%
+    ggplot(aes(Coefficient, Estimate, color=Coefficient)) +   
+    geom_point() +
+    geom_errorbar(aes(ymin=lower, ymax=upper)) +
+    geom_abline(intercept = 0, slope=0) +
+    labs(x="") +
+    coord_flip() +
+    guides(color=FALSE) +
+    theme_classic() +
+    ggtitle("Log Odds") +
+    geom_text(aes(
+        label=round(Estimate, 2), 
+        vjust=-0.5, color=NULL, hjust=0.4))
+```

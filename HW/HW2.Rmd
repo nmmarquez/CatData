@@ -1,0 +1,108 @@
+---
+title: "Homework 2"
+author: "Neal Marquez"
+date: "October 8, 2018"
+output: pdf_document
+---
+
+```{R loads, message=F,echo=F,warning=F}
+library(MASS)
+library(tidyverse)
+library(nnet)
+library(lmtest)
+
+orderImpair <- c("Impaired", "Moderate", "Mild", "Well")
+impairDF <- read_tsv("./mentalimpairment-data.txt", col_types="icii") %>%
+    mutate(Impairment=factor(Impairment, levels=orderImpair))
+allDF <- read_tsv("./alligatorfood-data.txt", col_types="cciiiiii") %>%
+    gather(key="Prey", value="Count", Fish:Other) %>%
+    slice(unlist(mapply(function(x, y) rep(x, y), 1:n(), Count))) %>%
+    select(-Count)
+```
+
+```{R impairMult}
+modelImpFull <- multinom(Impairment ~ SES + Events, data=impairDF, trace=F)
+modelImpSES <- multinom(Impairment ~ SES, data=impairDF, trace=F)
+modelImpEVT <- multinom(Impairment ~ Events, data=impairDF, trace=F)
+lrtest(modelImpEVT, modelImpFull)
+lrtest(modelImpSES, modelImpFull)
+
+finalModel <- modelImpEVT
+
+jPred <- finalModel %>%
+    predict(data.frame(SES=0, Events=7), type="probs")
+
+data.frame(Events=seq(0, 10, by=.1)) %>%
+    cbind(predict(finalModel, ., type="probs")) %>%
+    gather(key="Outcome", value="Probability", Impaired:Well) %>%
+    mutate(Outcome=factor(Outcome, levels=orderImpair)) %>%
+    ggplot(aes(x=Events, y=Probability, group=Outcome, fill=Outcome)) +
+    geom_area() +
+    theme_classic() +
+    scale_x_continuous(breaks=0:10)
+
+```
+
+```{R impairProb}
+modelPImpFull <- polr(Impairment ~ SES + Events, data=impairDF, Hess=TRUE)
+modelPImpSES <- polr(Impairment ~ SES, data=impairDF, Hess=TRUE)
+modelPImpEVT <- polr(Impairment ~ Events, data=impairDF, Hess=TRUE)
+lrtest(modelPImpEVT, modelPImpFull)
+lrtest(modelPImpSES, modelPImpFull)
+
+finalPModel <- modelPImpEVT
+
+jPPred <- finalPModel %>%
+    predict(data.frame(SES=0, Events=7), type="probs")
+
+data.frame(Events=seq(0, 10, by=.1)) %>%
+    cbind(predict(finalPModel, ., type="probs")) %>%
+    gather(key="Outcome", value="Probability", Impaired:Well) %>%
+    mutate(Outcome=factor(Outcome, levels=orderImpair)) %>%
+    ggplot(aes(x=Events, y=Probability, group=Outcome, fill=Outcome)) +
+    geom_area() +
+    theme_classic() +
+    scale_x_continuous(breaks=0:10)
+
+```
+
+```{R all, message=F,echo=F,warning=F}
+modelAll <- multinom(Prey ~ Lake + Gender + Size, data=allDF, trace=F)
+
+extractCoeffs <- function(fittedmodel, logodds=FALSE){
+    coeff <- coef(fittedmodel) %>%
+        as.data.frame %>%
+        mutate(Outcome=row.names(.)) %>%
+        gather(key=Coefficient, value=Estimate, -Outcome) %>%
+        mutate(lower=c(t(confint(fittedmodel)[,1,]))) %>%
+        mutate(upper=c(t(confint(fittedmodel)[,2,])))
+    if(!logodds){
+        coeff <- coeff %>%
+            mutate_if(is.numeric, exp)
+    }
+    return(coeff)
+}
+
+extractCoeffs(modelAll, T) %>%
+    #filter(Coefficient != "(Intercept)") %>%
+    ggplot(aes(Outcome, Estimate, color = Outcome)) +   
+    geom_point() +
+    geom_errorbar(aes(ymin=lower, ymax=upper)) +
+    facet_wrap(~Coefficient, ncol=2, scales="free_y") +
+    geom_abline(intercept = 0, slope=0) +
+    labs(x="") +
+    coord_flip() +
+    guides(color=FALSE) +
+    theme_classic() +
+    ggtitle("Log Odds") +
+    geom_text(aes(
+        y=ifelse(Estimate > .2, lower, upper), 
+        label=round(Estimate, 2), 
+        vjust=0, color=NULL, hjust=ifelse(Estimate > .2, 1.1, -.2)))
+```
+
+```{R}
+pReptile <- modelAll %>%
+    predict(data.frame(Lake="Trafford",Gender="Male",Size=1), type="probs") %>%
+    .["Reptile"]
+```
