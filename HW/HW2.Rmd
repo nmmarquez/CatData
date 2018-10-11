@@ -20,7 +20,12 @@ allDF <- read_tsv("./alligatorfood-data.txt", col_types="cciiiiii") %>%
     select(-Count)
 ```
 
-```{R impairMult}
+# Question 1
+
+## Part 1
+Disregard the natural ordering of mental impairment levels and fit a multinomial model that involves both independent variables "economic status" and "life events" using the function multinom. Perform a likelihood ratio test to determine whether any of these two variables can be deleted from the model. Choose one model and determine the probability of being well, mild, moderate or impaired for John who has a low economic status and had seven important life events.
+
+```{R impairMultBuild}
 modelImpFull <- multinom(Impairment ~ SES + Events, data=impairDF, trace=F)
 modelImpSES <- multinom(Impairment ~ SES, data=impairDF, trace=F)
 modelImpEVT <- multinom(Impairment ~ Events, data=impairDF, trace=F)
@@ -28,10 +33,19 @@ lrtest(modelImpEVT, modelImpFull)
 lrtest(modelImpSES, modelImpFull)
 
 finalModel <- modelImpEVT
+```
 
-jPred <- finalModel %>%
-    predict(data.frame(SES=0, Events=7), type="probs")
+Using the multinomial test for unordered data we can test whether the addition of new variables is warented using a likelihood ratio test for the multinomial model. Note that when we test the inclusion of the new variable we see a change in the degrees of fredom of 3. This is because we have three seperate functions that we are testing in the mutinomial distribution. Based on the likelihood ratio test their does not appear to be a signifigant difference in the outcome when we include SES so we will not include it in the final model. Our final model then predicts that John who has had seven life events has the following probability of each outcome.
 
+```{R impairMult}
+(jPred <- finalModel %>%
+    predict(data.frame(SES=0, Events=7), type="probs") %>%
+    round(4))
+```
+
+We can see how the number of events changes the probabilities of outcomes in the plot below which spans a number of events equivelent to seen in the dataset.
+
+```{R impairMultPlot}
 data.frame(Events=seq(0, 10, by=.1)) %>%
     cbind(predict(finalModel, ., type="probs")) %>%
     gather(key="Outcome", value="Probability", Impaired:Well) %>%
@@ -39,11 +53,16 @@ data.frame(Events=seq(0, 10, by=.1)) %>%
     ggplot(aes(x=Events, y=Probability, group=Outcome, fill=Outcome)) +
     geom_area() +
     theme_classic() +
-    scale_x_continuous(breaks=0:10)
+    scale_x_continuous(breaks=0:10) +
+    ggtitle("Unordered Model: Probability of Outcomes as Number of Events Changes")
 
 ```
 
-```{R impairProb}
+## Part 2
+
+Answer the same questions, but this time take into consideration the ordering of the mental impairment levels.
+
+```{R impairProbBuild}
 modelPImpFull <- polr(Impairment ~ SES + Events, data=impairDF, Hess=TRUE)
 modelPImpSES <- polr(Impairment ~ SES, data=impairDF, Hess=TRUE)
 modelPImpEVT <- polr(Impairment ~ Events, data=impairDF, Hess=TRUE)
@@ -51,10 +70,17 @@ lrtest(modelPImpEVT, modelPImpFull)
 lrtest(modelPImpSES, modelPImpFull)
 
 finalPModel <- modelPImpEVT
+```
 
-jPPred <- finalPModel %>%
-    predict(data.frame(SES=0, Events=7), type="probs")
+Taking into account the order changes the effect that variables have on the outcome however at the $\alpha=.05$ level we still do not have enough evidence to include SES into the model. Therefore we will again choose as our final model the model with only the number of Events included. Notice now that the degrees of freedom have dropped for all models as we know have shared $\beta$ values across the models functional forms with only a seperate intercept for each. The final model leaves us with the following predictions for each outcome for John. Again the effect that the number of events has on the probability on outcome can be seen in the following graph.
 
+```{R impairProb}
+(jPPred <- finalPModel %>%
+    predict(data.frame(SES=0, Events=7), type="probs") %>%
+    round(4))
+```
+
+```{R impairProbPlot}
 data.frame(Events=seq(0, 10, by=.1)) %>%
     cbind(predict(finalPModel, ., type="probs")) %>%
     gather(key="Outcome", value="Probability", Impaired:Well) %>%
@@ -62,9 +88,14 @@ data.frame(Events=seq(0, 10, by=.1)) %>%
     ggplot(aes(x=Events, y=Probability, group=Outcome, fill=Outcome)) +
     geom_area() +
     theme_classic() +
-    scale_x_continuous(breaks=0:10)
+    scale_x_continuous(breaks=0:10) +
+    ggtitle("Ordered Model: Probability of Outcomes as Number of Events Changes")
 
 ```
+
+# Question 2
+
+This dataset comes from a study of factors influencing the primary food choice of alligators. The study comprised 219 alligators captured in four Florida lakes. There are five categories of food choices: fish, invertebrate, reptile, bird and other. The alligators were classified according to L = lake of capture (Hancock, Oklawaha, Trafford, George), G = gender (male,female), and S = size (<= 2.3 meters, > 2.3 meters long). Discuss which factors seem to influence alligators’ food choice by fitting appropriate multinomial models. According to your model, what is the probability that a male alligator from Lake Trafford that is 3 meters long prefers reptiles for dinner?
 
 ```{R all, message=F,echo=F,warning=F}
 modelAll <- multinom(Prey ~ Lake + Gender + Size, data=allDF, trace=F)
@@ -83,8 +114,19 @@ extractCoeffs <- function(fittedmodel, logodds=FALSE){
     return(coeff)
 }
 
+pReptile <- modelAll %>%
+    predict(data.frame(Lake="Trafford",Gender="Male",Size=1), type="probs") %>%
+    .["Reptile"] %>% round(4)
+```
+
+If we fit a full model with all variables to a multinomial model, there is no inherent order to the type of prey, we find that only a few variables are significant in predicting what the prey may be. Below is a plot of the Log Odds of the effect of observing a prey of a certain type in comparsion to the base category, which is birds. The two factors which seem to have an effect are size and being from Lake Hancock which decrease the probability of observing invertabrae prey in comparison to bird prey. Future analysis may consider running a likelihood ratio test to decide on the inclusion of this full variable set. The probability of a male alligator from Lake Trafford that is 3 meters long having a prey outcome of reptile is `r pReptile`
+
+```{R allplot, message=F,echo=F,warning=F}
+pReptile <- modelAll %>%
+    predict(data.frame(Lake="Trafford",Gender="Male",Size=1), type="probs") %>%
+    .["Reptile"] %>% round(4)
+
 extractCoeffs(modelAll, T) %>%
-    #filter(Coefficient != "(Intercept)") %>%
     ggplot(aes(Outcome, Estimate, color = Outcome)) +   
     geom_point() +
     geom_errorbar(aes(ymin=lower, ymax=upper)) +
@@ -99,10 +141,4 @@ extractCoeffs(modelAll, T) %>%
         y=ifelse(Estimate > .2, lower, upper), 
         label=round(Estimate, 2), 
         vjust=0, color=NULL, hjust=ifelse(Estimate > .2, 1.1, -.2)))
-```
-
-```{R}
-pReptile <- modelAll %>%
-    predict(data.frame(Lake="Trafford",Gender="Male",Size=1), type="probs") %>%
-    .["Reptile"]
 ```
