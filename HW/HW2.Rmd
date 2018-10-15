@@ -119,7 +119,7 @@ pReptile <- modelAll %>%
     .["Reptile"] %>% round(4)
 ```
 
-If we fit a full model with all variables to a multinomial model, there is no inherent order to the type of prey, we find that only a few variables are significant in predicting what the prey may be. Below is a plot of the Log Odds of the effect of observing a prey of a certain type in comparsion to the base category, which is birds. The two factors which seem to have an effect are size and being from Lake Hancock which decrease the probability of observing invertabrae prey in comparison to bird prey. Future analysis may consider running a likelihood ratio test to decide on the inclusion of this full variable set. The probability of a male alligator from Lake Trafford that is 3 meters long having a prey outcome of reptile is `r pReptile`
+If we fit a full model with all variables to a multinomial model, there is no inherent order to the type of prey, we find that only a few variables are significant in predicting what the prey may be. Below is a plot of the Log Odds($\beta$ coefficients) with confidence intervals  of the effect of observing a prey of a certain type in comparsion to the base category, which is birds. The two factors which seem to have an effect are size and being from Lake Hancock which decrease the probability of observing invertabrae prey in comparison to bird prey. Future analysis may consider running a likelihood ratio test to decide on the inclusion of this full variable set. The probability of a male alligator from Lake Trafford that is 3 meters long having a prey outcome of reptile is `r pReptile`.
 
 ```{R allplot, message=F,echo=F,warning=F}
 pReptile <- modelAll %>%
@@ -127,6 +127,7 @@ pReptile <- modelAll %>%
     .["Reptile"] %>% round(4)
 
 extractCoeffs(modelAll, T) %>%
+    filter(Coefficient!="(Intercept)") %>%
     ggplot(aes(Outcome, Estimate, color = Outcome)) +   
     geom_point() +
     geom_errorbar(aes(ymin=lower, ymax=upper)) +
