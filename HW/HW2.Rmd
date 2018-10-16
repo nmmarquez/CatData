@@ -6,10 +6,11 @@ output: pdf_document
 ---
 
 ```{R loads, message=F,echo=F,warning=F}
-library(MASS)
 library(tidyverse)
-library(nnet)
+library(MASS)
 library(lmtest)
+library(nnet)
+
 
 orderImpair <- c("Impaired", "Moderate", "Mild", "Well")
 impairDF <- read_tsv("./mentalimpairment-data.txt", col_types="icii") %>%
@@ -17,7 +18,7 @@ impairDF <- read_tsv("./mentalimpairment-data.txt", col_types="icii") %>%
 allDF <- read_tsv("./alligatorfood-data.txt", col_types="cciiiiii") %>%
     gather(key="Prey", value="Count", Fish:Other) %>%
     slice(unlist(mapply(function(x, y) rep(x, y), 1:n(), Count))) %>%
-    select(-Count)
+    dplyr::select(-Count)
 ```
 
 # Question 1
@@ -35,7 +36,7 @@ lrtest(modelImpSES, modelImpFull)
 finalModel <- modelImpEVT
 ```
 
-Using the multinomial test for unordered data we can test whether the addition of new variables is warented using a likelihood ratio test for the multinomial model. Note that when we test the inclusion of the new variable we see a change in the degrees of fredom of 3. This is because we have three seperate functions that we are testing in the mutinomial distribution. Based on the likelihood ratio test their does not appear to be a signifigant difference in the outcome when we include SES so we will not include it in the final model. Our final model then predicts that John who has had seven life events has the following probability of each outcome.
+Using the multinomial test for unordered data we can test whether the addition of new variables is warranted using a likelihood ratio test for the multinomial model. Note that when we test the inclusion of the new variable we see a change in the degrees of freedom of 3. This is because we have three separate functions that we are testing in the mutinomial distribution. Based on the likelihood ratio test their does not appear to be a significant difference in the outcome when we include SES so we will not include it in the final model. Our final model then predicts that John who has had seven life events has the following probability of each outcome.
 
 ```{R impairMult}
 (jPred <- finalModel %>%
@@ -43,7 +44,7 @@ Using the multinomial test for unordered data we can test whether the addition o
     round(4))
 ```
 
-We can see how the number of events changes the probabilities of outcomes in the plot below which spans a number of events equivelent to seen in the dataset.
+We can see how the number of events changes the probabilities of outcomes in the plot below which spans a number of events equivalent to seen in the dataset.
 
 ```{R impairMultPlot}
 data.frame(Events=seq(0, 10, by=.1)) %>%
@@ -72,7 +73,7 @@ lrtest(modelPImpSES, modelPImpFull)
 finalPModel <- modelPImpEVT
 ```
 
-Taking into account the order changes the effect that variables have on the outcome however at the $\alpha=.05$ level we still do not have enough evidence to include SES into the model. Therefore we will again choose as our final model the model with only the number of Events included. Notice now that the degrees of freedom have dropped for all models as we know have shared $\beta$ values across the models functional forms with only a seperate intercept for each. The final model leaves us with the following predictions for each outcome for John. Again the effect that the number of events has on the probability on outcome can be seen in the following graph.
+Taking into account the order changes the effect that variables have on the outcome however at the $\alpha=.05$ level we still do not have enough evidence to include SES into the model. Therefore we will again choose as our final model the model with only the number of Events included. Notice now that the degrees of freedom have dropped for all models as we know have shared $\beta$ values across the models functional forms with only a separate intercept for each. The final model leaves us with the following predictions for each outcome for John. Again the effect that the number of events has on the probability on outcome can be seen in the following graph.
 
 ```{R impairProb}
 (jPPred <- finalPModel %>%
@@ -97,8 +98,25 @@ data.frame(Events=seq(0, 10, by=.1)) %>%
 
 This dataset comes from a study of factors influencing the primary food choice of alligators. The study comprised 219 alligators captured in four Florida lakes. There are five categories of food choices: fish, invertebrate, reptile, bird and other. The alligators were classified according to L = lake of capture (Hancock, Oklawaha, Trafford, George), G = gender (male,female), and S = size (<= 2.3 meters, > 2.3 meters long). Discuss which factors seem to influence alligators’ food choice by fitting appropriate multinomial models. According to your model, what is the probability that a male alligator from Lake Trafford that is 3 meters long prefers reptiles for dinner?
 
+To test the model with the best fit we compare a number of models which include a combination of the Lake, Gender, Size Variables to predict prey in a multinomial model. From this of seven unique models we run the AIC on all models and find that the lowest AIC come from the model which includes Lake and Size followed by the model with all three variables. To test whether we should add the additional Gender Variable to the model we run a Likelihood ratio test but do not find evidence that we should add the variable to the final model at the $\alpha = .05$ level. Our final model then uses Lake and Size to predict prey type.
+
 ```{R all, message=F,echo=F,warning=F}
-modelAll <- multinom(Prey ~ Lake + Gender + Size, data=allDF, trace=F)
+models <- list(
+    lake = Prey ~ Lake,
+    gender = Prey ~ Gender,
+    size = Prey ~ Size,
+    `lake+gender` = Prey ~ Lake + Gender,
+    `lake+size` = Prey ~ Lake + Size,
+    `gender+size` = Prey ~ Gender + Size,
+    `lake+gender+size` = Prey ~ Lake + Gender + Size
+)
+
+cat("AIC for all models")
+modelList <- lapply(models, function(f){
+    multinom(f, data=allDF, trace=F)})
+sapply(modelList, AIC)
+cat("\n")
+lrtest(modelList$`lake+size`, modelList$`lake+gender+size`)
 
 extractCoeffs <- function(fittedmodel, logodds=FALSE){
     coeff <- coef(fittedmodel) %>%
@@ -114,19 +132,17 @@ extractCoeffs <- function(fittedmodel, logodds=FALSE){
     return(coeff)
 }
 
-pReptile <- modelAll %>%
+finalModel <- multinom(Prey ~ Lake + Size, data=allDF, trace=FALSE)
+
+pReptile <- finalModel %>%
     predict(data.frame(Lake="Trafford",Gender="Male",Size=1), type="probs") %>%
     .["Reptile"] %>% round(4)
 ```
 
-If we fit a full model with all variables to a multinomial model, there is no inherent order to the type of prey, we find that only a few variables are significant in predicting what the prey may be. Below is a plot of the Log Odds($\beta$ coefficients) with confidence intervals  of the effect of observing a prey of a certain type in comparsion to the base category, which is birds. The two factors which seem to have an effect are size and being from Lake Hancock which decrease the probability of observing invertabrae prey in comparison to bird prey. Future analysis may consider running a likelihood ratio test to decide on the inclusion of this full variable set. The probability of a male alligator from Lake Trafford that is 3 meters long having a prey outcome of reptile is `r pReptile`.
+Below is a plot of the Log Odds($\beta$ coefficients) with confidence intervals  of the effect of observing a prey of a certain type in comparison to the base category, which is birds. The two factors which seem to have an effect are size and being from Lake Hancock which decrease the probability of observing invertebrate prey in comparison to bird prey. The probability of a male alligator from Lake Trafford that is 3 meters long having a prey outcome of reptile is `r pReptile`.
 
 ```{R allplot, message=F,echo=F,warning=F}
-pReptile <- modelAll %>%
-    predict(data.frame(Lake="Trafford",Gender="Male",Size=1), type="probs") %>%
-    .["Reptile"] %>% round(4)
-
-extractCoeffs(modelAll, T) %>%
+extractCoeffs(finalModel, T) %>%
     filter(Coefficient!="(Intercept)") %>%
     ggplot(aes(Outcome, Estimate, color = Outcome)) +   
     geom_point() +
