@@ -1,0 +1,84 @@
+---
+title: "Homework 3"
+author: "Neal Marquez"
+date: "October 22, 2018"
+output: pdf_document
+---
+
+```{R loads, message=F, warning=F}
+library(tidyverse)
+library(lmtest)
+library(latex2exp)
+
+stopDF <- read.table("./policestops.txt", skip = 1) %>%
+    as_tibble %>%
+    rename(stops=V1, arrests=V2, precinct=V3, ethnicity=V4) %>%
+    mutate(ethnicity=c("Black", "Hispanic", "White")[ethnicity]) %>%
+    mutate(precinct=as.factor(precinct), ethnicity=as.factor(ethnicity))
+```
+
+# Question 1
+
+## Part A
+
+```{R}
+models <- list(
+    both = stops ~ precinct + ethnicity,
+    precinct = stops ~ precinct,
+    ethnicity = stops ~ ethnicity,
+    neither = stops ~ 1
+)
+
+modelFits <- lapply(models, glm, data=stopDF, family=poisson())
+modelDiag <- sapply(modelFits, function(m) c(AIC=AIC(m), BIC=BIC(m)))
+modelDiag
+```
+
+```{R}
+expand.grid(ethnicity=c("Black", "White"), precinct=c("1", "3")) %>%
+    mutate(pred=predict(modelFits$both, newdata=., type="response"))
+```
+
+## Part B
+```{R}
+modelOffFits <- lapply(models, function(x){
+    glm(x, data=stopDF, family=poisson(), offset=log(arrests))
+})
+modelOffDiag <- sapply(modelOffFits, function(m) c(AIC=AIC(m), BIC=BIC(m)))
+modelOffDiag
+```
+
+```{R}
+stopDF %>%
+    filter((precinct %in% c("1", "3")) & (ethnicity != "Hispanic")) %>%
+    mutate(pred=predict(modelOffFits$ethnicity, newdata=., type="response"))
+```
+
+## Part C
+```{R  message=F, warning=F}
+modelOffFits$ethnicity %>%
+    confint %>%
+    as_tibble %>%
+    mutate(coefficient=names(coef(modelOffFits$ethnicity))) %>%
+    mutate(mu=unname(coef(modelOffFits$ethnicity))) %>%
+    mutate_if(is.numeric, exp) %>%
+    filter(coefficient != "(Intercept)") %>%
+    mutate(coefficient=gsub("ethnicity", "", coefficient)) %>%
+    ggplot(aes(
+        x = coefficient, 
+        y = mu, 
+        ymax = `97.5 %`, 
+        ymin = `2.5 %`, 
+        color = coefficient)) +
+    geom_point() +
+    geom_errorbar(width=.2) +
+    theme_classic() +
+    coord_flip() +
+    geom_hline(yintercept=1., linetype=3) +
+    guides(color=FALSE) +
+    labs(x="Coefficient", y=TeX("$\\beta$")) +
+    geom_text(aes(
+        label=round(mu, 2), 
+        vjust=1.5, color=NULL, hjust=.4))
+    
+```
