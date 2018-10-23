@@ -21,6 +21,25 @@ stopDF <- read.table("./policestops.txt", skip = 1) %>%
 
 ## Part A
 
+Fit the Poisson models  
+
+$$
+\text{stops} = \text{Poisson}(\text{exp}(\beta_0 + \beta_1 \text{precinct} + \beta_2 \text{ethnicity}))
+$$
+$$
+\text{stops} = \text{Poisson}(\text{exp}(\beta_0 + \beta_1 \text{precinct}))
+$$
+$$
+\text{stops} = \text{Poisson}(\text{exp}(\beta_0 + \beta_2 \text{ethnicity}))
+$$
+$$
+\text{stops} = \text{Poisson}(\text{exp}(\beta_0))
+$$
+
+Which model would you prefer based on AIC? Which model would you prefer based on BIC? Given your choice of model, what is the expected number of stops in precinct 3 for blacks? What is the expected number of stops in precinct 3 for whites? Answer the same questions for precinct 1.
+
+I ran all four models as listed above and labeled them `both`, `precinct`, `ethnicity`, and `neither` respectively. When calculating AIC and BIC for each of the models I found that the model that included both precinct and ethnicity, with a total of 77 parameters to fit, provided the best results. A table with the estimates of predictions for number of stops for blacks and whites in precincts 1 and 3 are provided below.
+
 ```{R}
 models <- list(
     both = stops ~ precinct + ethnicity,
@@ -36,10 +55,30 @@ modelDiag
 
 ```{R}
 expand.grid(ethnicity=c("Black", "White"), precinct=c("1", "3")) %>%
-    mutate(pred=predict(modelFits$both, newdata=., type="response"))
+    mutate(predictions=predict(modelFits$both, newdata=., type="response"))
 ```
 
-## Part B
+## Part B  
+
+Now use the number of arrests as baseline. That is, fit the following models:  
+
+$$
+\text{stops} = \text{Poisson}(\text{arrests} \times \text{exp}(\beta_0 + \beta_1 \text{precinct} + \beta_2 \text{ethnicity}))
+$$
+$$
+\text{stops} = \text{Poisson}(\text{arrests} \times \text{exp}(\beta_0 + \beta_1 \text{precinct}))
+$$
+$$
+\text{stops} = \text{Poisson}(\text{arrests} \times \text{exp}(\beta_0 + \beta_2 \text{ethnicity}))
+$$
+$$
+\text{stops} = \text{Poisson}(\text{arrests} \times \text{exp}(\beta_0))
+$$
+
+Which model would you prefer based on AIC? Which model would you prefer based on BIC? Would you prefer a model with a baseline or a model without a baseline? Justify your answers. Find out the expected number of stops in precincts 1 and 3 for blacks and whites based on your final choice of model.
+
+When I now fit the models with an offset adjusting for the number of arrests in the area I find that now the model that provides the best fit with AIC and BIC is the ethnicity only model which includes only 3 parameters. When we use the arrests to offset we account for the population differences between the precincts and do not get the benefit from now adding the extra 74 parameters for precincts. Again, a table with the estimates of predictions for number of stops for blacks and whites in precincts 1 and 3, which now are only different because of the number of stops, are provided below.
+
 ```{R}
 modelOffFits <- lapply(models, function(x){
     glm(x, data=stopDF, family=poisson(), offset=log(arrests))
@@ -51,10 +90,15 @@ modelOffDiag
 ```{R}
 stopDF %>%
     filter((precinct %in% c("1", "3")) & (ethnicity != "Hispanic")) %>%
-    mutate(pred=predict(modelOffFits$ethnicity, newdata=., type="response"))
+    mutate(predictions=predict(modelOffFits$ethnicity, newdata=., type="response"))
 ```
 
 ## Part C
+
+Interpret the coefficients of your final model. Is there any evidence of racial discrimination by the police?
+
+After we adjust the model using arrests we find that we only need three parameters in the model, one for the intercept(which accounts for the baseline ethnic group which is black) and two for the other ethnic groups in the data White and Hispanic. The plot below shows the multiplicative relative change the White and Hispanic ethnic groups face relative to the Black ethnic group for the outcome of stops after accounting for the number of arrests observed for that ethnic group in a particular precinct. We can see that relative to Blacks whites experience less risk of being stopped relative to blacks, after adjusting for arrests, while Hispanics experience more. This is indicated by the position of the coefficient relative to the baseline null effect of 1 in the plot. This leads us to believe that after accounting for the number of arrests in an area Blacks and Hispanics experience relatively more stops than whites which may be indicative of selective stopping behavior from law enforcement that disproportionately targets minorities. 
+
 ```{R  message=F, warning=F}
 modelOffFits$ethnicity %>%
     confint %>%
@@ -79,6 +123,7 @@ modelOffFits$ethnicity %>%
     labs(x="Coefficient", y=TeX("$\\beta$")) +
     geom_text(aes(
         label=round(mu, 2), 
-        vjust=1.5, color=NULL, hjust=.4))
+        vjust=1.5, color=NULL, hjust=.4)) +
+    ggtitle("Final Selected Model Coefficients")
     
 ```
