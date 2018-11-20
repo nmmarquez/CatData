@@ -1,0 +1,110 @@
+---
+title: "Homework 4"
+author: "Neal Marquez"
+date: "November 9th, 2018"
+output: pdf_document
+---
+
+You will analyze data from a study of the effects of aspirin on myocardial infarction below.
+
+```{r setup, warning=FALSE, message=FALSE, echo=F}
+rm(list=ls())
+library(tidyverse)
+vc2x2 <- matrix(c(28, 18, 656, 658), nrow=2, ncol=2)
+```
+
+#### 1.  Calculate the row and columns totals of this table. What is the grand total?
+
+```{r, echo=FALSE}
+cat(paste0("Column sums are ", paste(colSums(vc2x2), collapse=", ")))
+cat(paste0("Row sums are ", paste(rowSums(vc2x2), collapse=", ")))
+```
+
+#### 2. Calculate the upper and lower bounds for each of the four cell entries given the row and column totals.
+
+```{r, echo=F}
+f <- function(i, j, mat=vc2x2){
+    c(
+        max(0, sum(mat[i,]) + sum(mat[,j]) - sum(mat)),
+        min(sum(mat[i,]), sum(mat[,j]))
+    )
+}
+
+pMat <- t(mapply(f, rep(1:2, each=2), rep(1:2, 2)))
+row.names(pMat) <- paste0("n_", rep(1:2, each=2), ",", rep(1:2, 2))
+colnames(pMat) <- c("Lower", "Upper")
+pMat
+```
+
+#### 3. How many tables are in the set T of tables consistent with the row and columns totals of Table 1? Give an analytic expression for these tables as a function of the (1; 1) cell count
+
+```{r, echo=F}
+tableN <- diff(mapply(f, rep(1:2, each=2), rep(1:2, 2))[,1])
+```
+
+The number of permutation tables can be calculated by the difference between the max and the min of the cell counts for any cell which is `r tableN`. The cells may be described as. 
+
+$$
+T = \{(x, 684-x, 46-x, 630+x) : x \in \{0, 1, \dots,46 \} \}
+$$
+
+where $x$ is the (1,1) count.
+
+#### 4. Calculate the expected cell values under the saturated log-linear model.
+
+In the saturated model we have three parameters with an interaction term which allows the outcome of MI to vary by treatment type. The expected counts given the marginals are thus shown below. Notice that they perfectly match the data of the contingency table.
+
+```{r, echo=F}
+saturated.loglin <- loglin(vc2x2, margin=list(c(1,2)), fit=T, param=T, print=F)
+saturated.loglin$fit
+```
+
+#### 5. Calculate the expected cell values under the log-linear model of independence of Aspirin Use and Myocardial Infarction.
+
+In the independence model there is no interaction term and thus the expected cell counts are equal in their column and row ratios.
+
+```{r, echo=F}
+indep.loglin <- loglin(vc2x2, margin=list(1,2), fit=TRUE, param=TRUE, print=F)
+indep.loglin$fit
+```
+
+#### 6. Perform an asymptotic test of independence of Aspirin Use and Myocardial Infarction based on Pearson's chi-square statistic
+
+```{r}
+1-pchisq(
+    indep.loglin$pearson-saturated.loglin$pearson,
+    indep.loglin$df-saturated.loglin$df)
+```
+
+#### 7. Perform an asymptotic test of independence of Aspirin Use and Myocardial Infarction based on the likelihood ratio statistic $G^2$
+
+```{r}
+1-pchisq(
+    indep.loglin$lrt-saturated.loglin$lrt,
+    indep.loglin$df-saturated.loglin$df)
+```
+
+#### 8. Perform the Fisher's exact test of independence of Aspirin Use and Myocardial Infarction. Clearly state which hypothesis you chose to test vs. which alternative.
+
+```{r, echo=FALSE}
+fTest <- fisher.test(vc2x2, simulate.p.value=TRUE, B=1e5)
+fTest
+cat("Null Hypothesis: Odds Ratio is equal to 1")
+```
+
+#### 9. Use your chosen log-linear model to describe the conditional distribution of Aspirin Use given Myocardial Infarction:
+
+$$
+\text{log}\frac{P(\text{Aspirin Use} = \text{"Placebo"} | \text{Myocardial Infraction})}{P(\text{Aspirin Use} = \text{"Aspirin"} | \text{Myocardial Infraction})}
+$$
+
+```{r, echo=F}
+orMI <- round(log(fTest$estimate), 2)
+ciMI <- round(log(fTest$conf.int), 2)
+```
+
+The log odds of the different Aspirin use category conditional Myocardial infraction is `r orMI`(`r ciMI[1]`,`r ciMI[2]`) based on the saturated model. 
+
+#### 10. Draw conclusions related to the effect of aspirin on the occurrence of myocardial infarction. Summarize your findings in a concise statement.
+
+We find that there is not significant evidence for an interaction term in the model and the effect of Aspirin Use on myocardial infraction, however, the mean of the odds increase is nearly 1.5. Based on previous literature on the connection between myocardial infraction and aspirin I chose to stick with the saturated model. The large confidence intervals that we observe are influenced by our sample size and the relatively low probability of myocardial infraction.

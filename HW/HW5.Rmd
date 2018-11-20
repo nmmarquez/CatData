@@ -1,0 +1,159 @@
+---
+title: "HW5"
+author: "Neal Marquez"
+date: "November 19, 2018"
+output: pdf_document
+---
+
+Problem 1. A single-nucleotide polymorphism (SNP) is a DNA sequence variation occurring when a single nucleotide (A, T, C, or G) in the genome differs between members of a species or paired chromosomes in an individual. We want to study whether the genotype associated with a particular SNP (which we generically call "SNP2") is related to the occurrence of Crohn's disease. Its three possible values represent the genotype of this biallelic SNP: 1 (BB), 2 (Bb) and 3 (bb).Here b is the minor allele (proportion of occurrence $\frac{649+2*527}{2*4970}=.171$ and B the wildtype allele (proportion of occurrence $\frac{2*3794+649}{2*4970}=.829$).The data is Table 1 is a cross-classification of 4970 individuals by SNP2 ("BB" vs. "Bb or bb") and Chron's disease status ("yes" and "no"). The two binary variables are denoted by $X_1$ (occurrence of Crohn's disease) and $X_2$ (absence or presence of the minor allele b at location SNP 2).
+
+```{r,results='asis', message=F, warning=F, echo=F}
+rm(list=ls())
+library(xtable)
+library(tidyverse)
+
+a <- sample(x = c(1,2,3), size = 1000, replace = T)
+b <- sample(x = c('a', 'b', 'c'), size = 1000, replace = T)
+
+DF <- data.frame(
+    disease = c(rep(0, 2037), rep(1, 1757), rep(0, 958), rep(1, 218)), 
+    SNP2 = c(rep("BB", 2037+1757), rep("Bb or bb", 958+218)))
+
+poisDF <- DF %>%
+    mutate(disease=factor(c("Chrons=No", "Chrons=Yes")[disease+1])) %>%
+    group_by(disease, SNP2) %>%
+    summarize(y=n()) %>%
+    mutate(SNP2=relevel(SNP2, "BB"))
+
+DF3 <- data.frame(
+    disease = c(
+        rep(0, 2037), rep(1, 1757),
+        rep(0, 631), rep(1, 18),
+        rep(0, 327), rep(1, 200)), 
+    SNP2 = c(rep("BB", 2037+1757), rep("Bb", 631+18), rep("bb", 327+200))) %>%
+    mutate(SNP2=relevel(SNP2, ref="BB"))
+
+poisDF3 <- DF3 %>%
+    mutate(disease=factor(c("Chrons=No", "Chrons=Yes")[disease+1])) %>%
+    mutate(SNP2=factor(SNP2, levels=c("BB", "Bb", "bb"))) %>%
+    group_by(disease, SNP2) %>%
+    summarize(y=n())
+
+DF %>%
+    mutate(disease=c("Chrons=No", "Chrons=Yes")[disease+1]) %>%
+    table %>%
+    as.data.frame.matrix %>%
+    xtable(
+        align = "|l|rr|",
+        caption = "Example of a 2x2 table for genotype-disease association") %>%
+    print(
+        caption.placement = 'top',
+        comment = F,
+        scalebox=1,
+        include.rownames = T,
+        hline.after = c(-1,0,nrow(df)),
+        vline.after = c(1),
+        format.args=list(big.mark = ",", decimal.mark = "."))
+```
+
+#### 1a. Fit the log-linear model of independence and determine if it fits the data well
+
+```{r, message=F, warning=F, echo=F}
+saturated.loglin <- DF %>%
+    table %>%
+    as.matrix %>%
+    loglin(margin=list(c(1,2)), fit=T, param=T, print=F)
+
+indep.loglin <- DF %>%
+    table %>%
+    as.matrix %>%
+    loglin(margin=list(1,2), fit=TRUE, param=TRUE, print=F)
+
+chiP <- 1-pchisq(
+    indep.loglin$pearson-saturated.loglin$pearson,
+    indep.loglin$df-saturated.loglin$df)
+
+lrtP <- 1-pchisq(
+    indep.loglin$lrt-saturated.loglin$lrt,
+    indep.loglin$df-saturated.loglin$df)
+```
+
+#### 1b. Derive the logistic regression of $X_1$ given $X_2$ from the log-linear model you chose. Provide an interpretation for this regression equation.
+
+$$
+\begin{aligned}
+\text{log} \frac{P(\text{Chron's} = \text{No}|\text{SNP} = \text{BB})}
+    {P(\text{Chron's} = \text{Yes} | \text{SNP} = \text{BB})} &=
+    \text{log}(m_{21}) - \text{log}(m_{11}) \\
+&=(u_{1(2)} - u_{1(1)}) + (u_{12(21)} - u_{12(11)}) \\
+&= \beta_0 \\
+\text{log} \frac{P(\text{Chron's} = \text{No}|\text{SNP} \neq \text{BB})}
+    {P(\text{Chron's} = \text{Yes} | \text{SNP} \neq \text{BB})} &=
+    \text{log}(m_{22}) - \text{log}(m_{12}) \\
+&=(u_{1(2)} - u_{1(1)}) + (u_{12(22)} - u_{12(12)}) \\
+&= \beta_0 + \beta_1 \\
+\end{aligned}
+$$
+
+```{r, message=F, warning=F, echo=F}
+satGLM <- glm(disease ~ SNP2, data=DF, family=binomial)
+# make sure intercepts match
+match <- all(
+    all.equal(
+        unname(saturated.loglin$param$disease.SNP2[1,2] * 2 +
+                   saturated.loglin$param$disease[2] * 2),
+        unname(satGLM$coefficients[1])),
+# make sure alt matches
+    all.equal(
+        unname(-saturated.loglin$param$disease.SNP2[1,2] * 2 +
+                   saturated.loglin$param$disease[2] * 2),
+        sum(satGLM$coefficients)))
+```
+
+```{r, message=F, warning=F, echo=F}
+fTest <- DF %>%
+    mutate(disease=c("Chrons=No", "Chrons=Yes")[disease+1]) %>%
+    table %>%
+    as.matrix %>%
+    fisher.test
+```
+
+```{r,results='asis', message=F, warning=F, echo=F}
+DF3 %>%
+    mutate(disease=c("Chrons=No", "Chrons=Yes")[disease+1]) %>%
+    table %>%
+    as.data.frame.matrix %>%
+    xtable(
+        align = "|l|rrr|",
+        caption = "Example of a 2x3 table for genotype-disease association") %>%
+    print(
+        caption.placement = 'top',
+        comment = F,
+        scalebox=1,
+        include.rownames = T,
+        hline.after = c(-1,0,nrow(df)),
+        vline.after = c(1),
+        format.args=list(big.mark = ",", decimal.mark = "."))
+```
+
+```{r}
+saturated.loglin3 <- DF3 %>%
+    table %>%
+    as.matrix %>%
+    loglin(margin=list(c(1,2)), fit=T, param=T, print=F)
+
+indep.loglin3 <- DF3 %>%
+    table %>%
+    as.matrix %>%
+    loglin(margin=list(1,2), fit=TRUE, param=TRUE, print=F)
+
+1-pchisq(indep.loglin3$lrt,indep.loglin3$df)
+```
+
+```{r}
+mcexact(y ~ SNP2 + disease, data=poisDF3)
+```
+
+```{r}
+summary(glm(disease ~ SNP2, data=DF3, family = binomial()))
+```
