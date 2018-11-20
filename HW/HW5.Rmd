@@ -11,6 +11,7 @@ Problem 1. A single-nucleotide polymorphism (SNP) is a DNA sequence variation oc
 rm(list=ls())
 library(xtable)
 library(tidyverse)
+library(exactLoglinTest)
 
 a <- sample(x = c(1,2,3), size = 1000, replace = T)
 b <- sample(x = c('a', 'b', 'c'), size = 1000, replace = T)
@@ -56,7 +57,9 @@ DF %>%
         format.args=list(big.mark = ",", decimal.mark = "."))
 ```
 
-#### 1a. Fit the log-linear model of independence and determine if it fits the data well
+#### 1a. Fit the log-linear model of independence and determine if it fits the data well.
+
+Below I fit both a model of independence and a saturated model to the Chron's data. I test the appropriateness of a model of independence by comparing it against the saturated model with an asymptotic test of independence based on Pearson's chi-square statistic as well as based on the likelihood ratio statistic. For both tests, the test statistic supported the saturated model over the independent model $p<.05$.
 
 ```{r, message=F, warning=F, echo=F}
 saturated.loglin <- DF %>%
@@ -80,20 +83,23 @@ lrtP <- 1-pchisq(
 
 #### 1b. Derive the logistic regression of $X_1$ given $X_2$ from the log-linear model you chose. Provide an interpretation for this regression equation.
 
+We can derive the logistic regression coefficients from the original log-linear model fit of the saturated as follows below. 
+
 $$
 \begin{aligned}
-\text{log} \frac{P(\text{Chron's} = \text{No}|\text{SNP} = \text{BB})}
-    {P(\text{Chron's} = \text{Yes} | \text{SNP} = \text{BB})} &=
+\text{log} \frac{P(\text{Chron's} = \text{Yes}|\text{SNP} = \text{BB})}
+    {P(\text{Chron's} = \text{No} | \text{SNP} = \text{BB})} &=
     \text{log}(m_{21}) - \text{log}(m_{11}) \\
 &=(u_{1(2)} - u_{1(1)}) + (u_{12(21)} - u_{12(11)}) \\
 &= \beta_0 \\
-\text{log} \frac{P(\text{Chron's} = \text{No}|\text{SNP} \neq \text{BB})}
-    {P(\text{Chron's} = \text{Yes} | \text{SNP} \neq \text{BB})} &=
+\text{log} \frac{P(\text{Chron's} = \text{Yes}|\text{SNP} \neq \text{BB})}
+    {P(\text{Chron's} = \text{No} | \text{SNP} \neq \text{BB})} &=
     \text{log}(m_{22}) - \text{log}(m_{12}) \\
 &=(u_{1(2)} - u_{1(1)}) + (u_{12(22)} - u_{12(12)}) \\
 &= \beta_0 + \beta_1 \\
 \end{aligned}
 $$
+
 
 ```{r, message=F, warning=F, echo=F}
 satGLM <- glm(disease ~ SNP2, data=DF, family=binomial)
@@ -110,6 +116,10 @@ match <- all(
         sum(satGLM$coefficients)))
 ```
 
+The model fit provides the beta coefficients which may be interpreted as log odds. For example, the $\text{exp}(\beta_0)$ can be read as the ratio of probabilities (odds) of having Chron's disease given that your genotype is "BB"($\frac{P(\text{Chron's} = \text{Yes}|\text{SNP} = \text{BB})}{P(\text{Chron's} = \text{No} | \text{SNP}=\text{BB})}=$ `r round(exp(satGLM$coefficients[1]), 4)`). We can see that the same results can be calculated directly from the data $(1757/(1757+2037))/(2037/(1757+2037))$. The coefficient $\beta_1$ can be interprted as the log odds ratio of having Chron's disease when having a genotype that is eitehr "Bb" or "bb". We can arrive at something more interpretable by taking $\text{exp}(\beta_0 + \beta_1)$ = `r round(exp(sum(satGLM$coefficients)), 4)` which gives us $\frac{P(\text{Chron's} = \text{Yes}|\text{SNP} \neq \text{BB})}{P(\text{Chron's} = \text{No} | \text{SNP} \neq \text{BB})}$ and again can be directly calculated from the data $(218/(958+218))/(958/(958+218))$.
+
+#### 1c. Use Fisher’s exact test to test whether there is an association between the occurrence of disease and the presence/absence of the minor allele b in location SNP2. Make sure you consider all three alternative hypotheses.
+
 ```{r, message=F, warning=F, echo=F}
 fTest <- DF %>%
     mutate(disease=c("Chrons=No", "Chrons=Yes")[disease+1]) %>%
@@ -117,6 +127,8 @@ fTest <- DF %>%
     as.matrix %>%
     fisher.test
 ```
+
+Problem 2.  Consider the 2x3 categorical data in Table 2. It cross-classifies the same 4970 individuals based on their Crohn’s disease status and genotype at locus SNP2. Remark that Table 1 is obtained from Table 2 by collapsing categories "Bb" or "bb" of SNP2.
 
 ```{r,results='asis', message=F, warning=F, echo=F}
 DF3 %>%
@@ -136,6 +148,8 @@ DF3 %>%
         format.args=list(big.mark = ",", decimal.mark = "."))
 ```
 
+#### 2a. Calculate the asymptotic p-value for testing independence vs. interaction.
+
 ```{r}
 saturated.loglin3 <- DF3 %>%
     table %>%
@@ -150,9 +164,13 @@ indep.loglin3 <- DF3 %>%
 1-pchisq(indep.loglin3$lrt,indep.loglin3$df)
 ```
 
+#### 2b. Calculate the exact p-value for testing independence vs. interaction.
+
 ```{r}
 mcexact(y ~ SNP2 + disease, data=poisDF3)
 ```
+
+#### 2c. Based on your choice of log-linear model, derive the regression of disease given SNP 2.
 
 ```{r}
 summary(glm(disease ~ SNP2, data=DF3, family = binomial()))
